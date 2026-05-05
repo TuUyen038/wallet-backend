@@ -2,7 +2,8 @@ package com.example.wallet_system.auth.entity;
 import jakarta.persistence.*;
 import lombok.*;
  
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 
 import com.example.wallet_system.user.entity.User;
  
@@ -31,26 +32,26 @@ public class RefreshToken {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
  
-    @Column(nullable = false, unique = true, length = 512)
+    @Column(nullable = false, unique = true, columnDefinition = "TEXT")
     private String token;
  
     @Column(name = "expired_at", nullable = false)
-    private LocalDateTime expiredAt;
+    private OffsetDateTime expiredAt;
  
     @Column(nullable = false)
     @Builder.Default
     private boolean revoked = false;
  
     @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
+    private OffsetDateTime createdAt;
  
     @PrePersist
     protected void onCreate() {
-        createdAt = LocalDateTime.now();
+        createdAt = OffsetDateTime.now(ZoneOffset.UTC);
     }
  
     public boolean isExpired() {
-        return LocalDateTime.now().isAfter(expiredAt);
+        return OffsetDateTime.now(ZoneOffset.UTC).isAfter(expiredAt);
     }
  
     public boolean isValid() {
