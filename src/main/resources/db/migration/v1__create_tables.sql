@@ -46,6 +46,7 @@ BEFORE UPDATE ON users
 FOR EACH ROW
 EXECUTE FUNCTION set_updated_at();
 
+
 CREATE TABLE wallets
 (
     id         BIGSERIAL PRIMARY KEY,
@@ -55,6 +56,7 @@ CREATE TABLE wallets
 );
 CREATE TYPE transaction_type AS ENUM ('DEPOSIT', 'WITHDRAW', 'TRANSFER');
 CREATE TYPE transaction_status AS ENUM ('PENDING', 'SUCCESS', 'FAILED');
+
 
 CREATE TABLE transactions
 (

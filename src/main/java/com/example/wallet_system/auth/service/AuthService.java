@@ -14,6 +14,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
  
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.UUID;
  
 @Service
@@ -112,7 +114,7 @@ public class AuthService {
         RefreshToken token = RefreshToken.builder()
                 .user(user)
                 .token(UUID.randomUUID().toString())
-                .expiredAt(LocalDateTime.now().plusSeconds(refreshTokenExpirationMs / 1000))
+                .expiredAt(OffsetDateTime.now(ZoneOffset.UTC).plusSeconds(refreshTokenExpirationMs / 1000))
                 .build();
  
         return refreshTokenRepository.save(token).getToken();
