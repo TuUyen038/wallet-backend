@@ -122,3 +122,5 @@ public class AuthService {
 }
  
 
+// TODO: refresh cần token lưu trong HttpOnly cookie
+//TODO: hash refresh token trước khi lưu vào DB
