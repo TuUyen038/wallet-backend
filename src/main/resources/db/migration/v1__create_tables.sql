@@ -54,10 +54,10 @@ CREATE TABLE wallets
     balance    BIGINT NOT NULL DEFAULT 0 CHECK (balance >= 0),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+
 CREATE TYPE transaction_type AS ENUM ('DEPOSIT', 'WITHDRAW', 'TRANSFER');
 CREATE TYPE transaction_status AS ENUM ('PENDING', 'SUCCESS', 'FAILED');
-
-
 CREATE TABLE transactions
 (
     id           BIGSERIAL PRIMARY KEY,
