@@ -1,6 +1,7 @@
 package com.example.wallet_system.auth.entity;
 
 import jakarta.persistence.*;
+import jakarta.persistence.criteria.CriteriaBuilder.In;
 import lombok.*;
 
 import java.time.Instant;
@@ -39,17 +40,19 @@ public class RefreshToken {
     private String token;
 
     @Column(name = "expired_at", nullable = false)
-    private OffsetDateTime expiredAt;
-
+    private Instant expiredAt;
+ 
     @Column(nullable = false)
     @Builder.Default
     private boolean revoked = false;
-
-    @Column(name = "created_at", nullable = false, updatable = false, insertable = false)
+ 
+    @Column(name = "created_at", nullable = false, updatable = false,
+            insertable = false)          // DEFAULT NOW() in DB
     private Instant createdAt;
 
+
     public boolean isExpired() {
-        return OffsetDateTime.now(ZoneOffset.UTC).isAfter(expiredAt);
+        return Instant.now().isAfter(expiredAt);
     }
 
     public boolean isValid() {

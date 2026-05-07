@@ -1,6 +1,8 @@
 package com.example.wallet_system.common.exception;
 
 import com.example.wallet_system.common.dto.ApiResponse;
+import com.example.wallet_system.common.exception.AppException.InsufficientBalanceException;
+
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -10,6 +12,8 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.util.stream.Collectors;
+
+import javax.security.auth.login.AccountNotFoundException;
 
 /**
  * Bắt toàn bộ exception ở 1 chỗ — controller không cần try/catch.
@@ -85,6 +89,21 @@ public class GlobalExceptionHandler {
                                 .body(ApiResponse.error("INSUFFICIENT_BALANCE", ex.getMessage()));
         }
 
+        // 422 - Tự chuyển tiền cho mình
+        @ExceptionHandler(AppException.SelfTransferException.class)
+        public ResponseEntity<ApiResponse<Void>> handleSelfTransfer(AppException.SelfTransferException ex) {
+                log.warn("Self-transfer attempt: {}", ex.getMessage());
+                return ResponseEntity
+                                .status(HttpStatus.UNPROCESSABLE_ENTITY)
+                                .body(ApiResponse.error("SELF_TRANSFER", ex.getMessage()));
+        }
+
+        @ExceptionHandler(AppException.DuplicateIdempotencyKeyException.class)
+        public ResponseEntity<ApiResponse<Void>> handleDuplicateKey(AppException.DuplicateIdempotencyKeyException ex) {
+                return ResponseEntity.status(HttpStatus.CONFLICT)
+                                .body(ApiResponse.error("CONFLICT", ex.getMessage()));
+        }
+
         // 500 - Lỗi không mong đợi — log ERROR để dễ trace
         @ExceptionHandler(Exception.class)
         public ResponseEntity<ApiResponse<Void>> handleUnexpected(Exception ex) {
@@ -93,4 +112,5 @@ public class GlobalExceptionHandler {
                                 .status(HttpStatus.INTERNAL_SERVER_ERROR)
                                 .body(ApiResponse.error("INTERNAL_ERROR", "An unexpected error occurred"));
         }
+
 }

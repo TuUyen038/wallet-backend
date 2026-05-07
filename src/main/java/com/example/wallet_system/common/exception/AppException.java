@@ -59,8 +59,22 @@ public class AppException {
 
     // 422 - Không đủ tiền (business rule violation)
     public static class InsufficientBalanceException extends RuntimeException {
-        public InsufficientBalanceException(Long walletId, Long amount) {
-            super("Insufficient balance in wallet: " + walletId + ", required: " + amount);
+        public InsufficientBalanceException(Long walletId, Long balance, Long amount) {
+            super("Insufficient balance in wallet: " + walletId + ", available: " + balance + ", required: " + amount);
         }
     }
+
+    // 422 - Tự chuyển tiền cho mình
+    public static class SelfTransferException extends RuntimeException {
+        public SelfTransferException() {
+            super("Cannot transfer to your own wallet");
+        }
+    }
+
+    public static class DuplicateIdempotencyKeyException extends RuntimeException {
+        public DuplicateIdempotencyKeyException(String refId) {
+            super("Idempotency key already used: " + refId);
+        }
+    }
+
 }
