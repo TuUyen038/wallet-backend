@@ -12,7 +12,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
- 
+
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -33,7 +34,7 @@ public class AuthService {
  
     @Transactional
     public AuthDto.RegisterResponse register(AuthDto.RegisterRequest request) {
-        if (userRepository.existsByEmail(request.email())) {
+        if (userRepository.existsByEmailIgnoreCase(request.email())) {
             throw new AppException.EmailAlreadyExistsException(request.email());
         }
  
@@ -51,7 +52,7 @@ public class AuthService {
  
     @Transactional
     public AuthDto.TokenResponse login(AuthDto.LoginRequest request) {
-        User user = userRepository.findByEmail(request.email())
+        User user = userRepository.findByEmailIgnoreCase(request.email())
                 .orElseThrow(AppException.InvalidCredentialsException::new);
  
         if (!passwordEncoder.matches(request.password(), user.getPassword())) {
@@ -114,7 +115,7 @@ public class AuthService {
         RefreshToken token = RefreshToken.builder()
                 .user(user)
                 .token(UUID.randomUUID().toString())
-                .expiredAt(OffsetDateTime.now(ZoneOffset.UTC).plusSeconds(refreshTokenExpirationMs / 1000))
+                .expiredAt(Instant.now().plusMillis(refreshTokenExpirationMs))
                 .build();
  
         return refreshTokenRepository.save(token).getToken();
@@ -123,4 +124,4 @@ public class AuthService {
  
 
 // TODO: refresh cần token lưu trong HttpOnly cookie
-//TODO: hash refresh token trước khi lưu vào DB
+// TODO: hash refresh token trước khi lưu vào DB

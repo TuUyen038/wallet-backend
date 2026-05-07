@@ -60,7 +60,7 @@ public class JwtFilter extends OncePerRequestFilter {
  
         // Chỉ set authentication nếu chưa authenticated (tránh override)
         if (email != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-            UserDetails userDetails = userRepository.findByEmail(email)
+            UserDetails userDetails = userRepository.findByEmailIgnoreCase(email)
                     .orElse(null);
  
             if (userDetails != null) {
