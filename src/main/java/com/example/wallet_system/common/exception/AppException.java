@@ -1,5 +1,9 @@
 package com.example.wallet_system.common.exception;
 
+import com.example.wallet_system.transfer.dto.TransferResponse;
+
+import lombok.Getter;
+
 /**
  * Tất cả custom exception của app.
  *
@@ -72,8 +76,18 @@ public class AppException {
     }
 
     public static class DuplicateIdempotencyKeyException extends RuntimeException {
-        public DuplicateIdempotencyKeyException(String refId) {
-            super("Idempotency key already used: " + refId);
+        @Getter
+        private final TransferResponse cachedResponse;
+
+        public DuplicateIdempotencyKeyException(TransferResponse cachedResponse) {
+            super("Duplicate idempotency key");
+            this.cachedResponse = cachedResponse;
+        }
+    }
+
+    public static class IdempotencyKeyInProgressException extends RuntimeException {
+        public IdempotencyKeyInProgressException(String key) {
+            super("Request with key " + key + " is still being processed");
         }
     }
 

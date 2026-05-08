@@ -5,6 +5,9 @@ import jakarta.persistence.*;
 import lombok.*;
 import java.time.Instant;
 
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
 /**
  * Mapped to: transactions table
  *
@@ -49,11 +52,13 @@ public class Transaction {
     private Long amount;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(nullable = false, columnDefinition = "transaction_type")
     private TransactionType type;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(nullable = false, columnDefinition = "transaction_status")
     private TransactionStatus status;
 
     /**
