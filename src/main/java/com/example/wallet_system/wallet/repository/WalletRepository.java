@@ -11,8 +11,6 @@ import java.util.Optional;
 
 public interface WalletRepository extends JpaRepository<Wallet, Long> {
 
-    Optional<Wallet> findByUserId(Long userId);
-
     // Dùng Ngày 5 — pessimistic lock khi transfer
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT w FROM Wallet w WHERE w.id = :id")
@@ -22,4 +20,8 @@ public interface WalletRepository extends JpaRepository<Wallet, Long> {
     @Query("SELECT w FROM Wallet w WHERE w.user.id = :userId")
     Optional<Wallet> findByUserIdForUpdate(@Param("userId") Long userId);
 
+    // Thêm vào WalletRepository
+    Optional<Wallet> findByUserId(Long userId);
+
+    Optional<Wallet> findById(Long id);
 }

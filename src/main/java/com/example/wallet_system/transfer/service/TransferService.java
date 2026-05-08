@@ -12,7 +12,6 @@ import com.example.wallet_system.wallet.entity.Wallet;
 import com.example.wallet_system.wallet.service.WalletService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,68 +25,122 @@ public class TransferService {
 
     private final TransactionRepository transactionRepository;
     private final WalletService walletService;
-
-    // ── Transfer ──────────────────────────────────────────────────────────────
+    private final IdempotencyService idempotencyService;
 
     /**
-     * Transfer flow:
-     *  1. Resolve reference_id (from Idempotency-Key header or random UUID)
-     *  2. Validate: no self-transfer
-     *  3. Acquire pessimistic locks on both wallets (lower id first → avoids deadlock)
-     *  4. Debit sender, credit receiver
-     *  5. Persist 2 Transaction rows linked by reference_id
-     *
-     * Idempotency strategy:
-     *  - We do NOT check-then-insert (race condition).
-     *  - We attempt the insert and let the DB unique constraint on reference_id
-     *    reject duplicates via DataIntegrityViolationException.
-     *  - On duplicate: fetch the existing row and return it (same response as original).
-     *
-     * If any step fails → @Transactional rolls back both wallet updates and both rows.
-     *
-     * Sign convention:
-     *   Sender row:   amount = -X  (money leaves)
-     *   Receiver row: amount = +X  (money enters), referenceId = refId + "_recv"
+     * Flow:
+     * 1. Claim idempotency key (REQUIRES_NEW) — INSERT vào idempotency_keys
+     *    + Duplicate → trả cached response luôn (không vào bước 2)
+     *    + In progress → 409
+     * 2. Load cả 2 wallet KHÔNG lock để lấy id
+     * 3. Lock theo thứ tự id tăng dần → tránh deadlock
+     * 4. Reload sau lock → balance mới nhất
+     * 5. Debit / Credit
+     * 6. Save transactions
+     * 7. Complete idempotency key (REQUIRES_NEW) — lưu response snapshot
      */
     @Transactional
-    public TransferResponse transfer(Long fromUserId, TransferRequest request) {
-        String refId = resolveReferenceId(request);
+public TransferResponse transfer(Long fromUserId, TransferRequest request) {
+    String refId = resolveReferenceId(request);
 
-        log.debug("Transfer start: fromUserId={}, toWalletId={}, amount={}, refId={}",
-            fromUserId, request.getToWalletId(), request.getAmount(), refId);
+    // claim() REQUIRES_NEW — suspend tx này, commit riêng
+    IdempotencyService.ClaimOutcome outcome = idempotencyService.claim(refId);
 
-        // 1. Load sender wallet with pessimistic write lock
-        Wallet senderWallet = walletService.getByUserIdForUpdate(fromUserId);
+    switch (outcome.getResult()) {
+        case DUPLICATE -> {
+            log.debug("Duplicate refId={}, returning cached response", refId);
+            return outcome.getCachedResponse();
+        }
+        case IN_PROGRESS -> {
+            log.warn("RefId={} still in progress", refId);
+            throw new AppException.IdempotencyKeyInProgressException(refId);
+        }
+        case CLAIMED -> {
+            // tiếp tục xử lý bình thường
+        }
+    }
 
-        // 2. Self-transfer guard
-        if (senderWallet.getId().equals(request.getToWalletId())) {
+
+    Wallet sender   = walletService.getByUserIdWithoutLock(fromUserId);
+    Wallet receiver = walletService.getByIdWithoutLock(request.getToWalletId());
+
+    if (sender.getId().equals(receiver.getId())) {
+        throw new AppException.SelfTransferException();
+    }
+
+    Long firstId  = Math.min(sender.getId(), receiver.getId());
+    Long secondId = Math.max(sender.getId(), receiver.getId());
+    walletService.getByIdForUpdate(firstId);
+    walletService.getByIdForUpdate(secondId);
+
+    Wallet senderLocked   = walletService.getByUserIdForUpdate(fromUserId);
+    Wallet receiverLocked = walletService.getByIdForUpdate(request.getToWalletId());
+
+    walletService.debit(senderLocked, request.getAmount());
+    walletService.credit(receiverLocked, request.getAmount());
+
+    Transaction senderTx = Transaction.builder()
+        .wallet(senderLocked)
+        .amount(-request.getAmount())
+        .type(TransactionType.TRANSFER)
+        .status(TransactionStatus.SUCCESS)
+        .referenceId(refId)
+        .build();
+
+    Transaction receiverTx = Transaction.builder()
+        .wallet(receiverLocked)
+        .amount(request.getAmount())
+        .type(TransactionType.TRANSFER)
+        .status(TransactionStatus.SUCCESS)
+        .referenceId(refId + "_recv")
+        .build();
+
+    transactionRepository.save(senderTx);
+    transactionRepository.save(receiverTx);
+transactionRepository.flush(); // ép Hibernate ghi xuống DB, populate createdAt
+
+// Reload để lấy createdAt từ DB
+Transaction saved = transactionRepository.findById(senderTx.getId()).orElseThrow();
+
+
+    TransferResponse response = toTransferResponse(saved, refId);
+
+    // complete() REQUIRES_NEW — commit snapshot độc lập
+    idempotencyService.complete(refId, response);
+
+    log.debug("Transfer SUCCESS: refId={}", refId);
+    return response;
+}
+    @Transactional
+    public TransferResponse doTransfer(Long fromUserId, TransferRequest request, String refId) {
+
+        // Bước 2: Load không lock để lấy id
+        Wallet sender   = walletService.getByUserIdWithoutLock(fromUserId);
+        Wallet receiver = walletService.getByIdWithoutLock(request.getToWalletId());
+
+        // Self-transfer guard
+        if (sender.getId().equals(receiver.getId())) {
             log.warn("Self-transfer attempt: userId={}", fromUserId);
             throw new AppException.SelfTransferException();
         }
 
-        // 3. Lock both wallets in id order to prevent deadlock
-        Wallet receiverWallet = walletService.getByIdForUpdate(request.getToWalletId());
+        // Bước 3: Lock theo thứ tự id tăng dần
+        Long firstId  = Math.min(sender.getId(), receiver.getId());
+        Long secondId = Math.max(sender.getId(), receiver.getId());
+        walletService.getByIdForUpdate(firstId);
+        walletService.getByIdForUpdate(secondId);
 
-        // If receiver id < sender id: we already locked sender first — this can deadlock.
-        // Correct approach: always lock lower id first.
-        // Reload in correct order:
-        if (receiverWallet.getId() < senderWallet.getId()) {
-            // Locks are already held at DB level within this transaction.
-            // PostgreSQL will wait, not deadlock, because we're in the same tx.
-            // No action needed — both are locked, order only matters across concurrent txs.
-            // For concurrent txs: WalletService must lock by id order externally.
-            // See: walletService.lockInOrder() used in concurrent scenario.
-        }
+        // Bước 4: Reload sau lock — balance mới nhất
+        Wallet senderLocked   = walletService.getByUserIdForUpdate(fromUserId);
+        Wallet receiverLocked = walletService.getByIdForUpdate(request.getToWalletId());
 
-        // 4. Debit sender (throws InsufficientBalanceException if not enough)
-        walletService.debit(senderWallet, request.getAmount());
+        // Bước 5: Debit / Credit
+        walletService.debit(senderLocked, request.getAmount());
+        walletService.credit(receiverLocked, request.getAmount());
 
-        // 5. Credit receiver
-        walletService.credit(receiverWallet, request.getAmount());
-
-        // 6. Persist transaction rows — let DB unique index reject duplicate refId
+        // Bước 6: Save 2 transaction rows
         Transaction senderTx = Transaction.builder()
-            .wallet(senderWallet)
+            .wallet(senderLocked)
             .amount(-request.getAmount())
             .type(TransactionType.TRANSFER)
             .status(TransactionStatus.SUCCESS)
@@ -95,35 +148,19 @@ public class TransferService {
             .build();
 
         Transaction receiverTx = Transaction.builder()
-            .wallet(receiverWallet)
+            .wallet(receiverLocked)
             .amount(request.getAmount())
             .type(TransactionType.TRANSFER)
             .status(TransactionStatus.SUCCESS)
             .referenceId(refId + "_recv")
             .build();
 
-        try {
-            Transaction savedSenderTx = transactionRepository.save(senderTx);
-            transactionRepository.save(receiverTx);
-            transactionRepository.flush(); // force DB constraint check NOW, inside this try
+        transactionRepository.save(senderTx);
+        transactionRepository.save(receiverTx);
 
-            log.debug("Transfer SUCCESS: refId={}, senderTxId={}", refId, savedSenderTx.getId());
-            return toTransferResponse(savedSenderTx, refId);
-
-        } catch (DataIntegrityViolationException ex) {
-            // Duplicate reference_id → idempotent replay
-            log.debug("Duplicate refId={}, returning existing transaction", refId);
-            return transactionRepository.findByReferenceId(refId)
-                .map(existing -> toTransferResponse(existing, refId))
-                .orElseThrow(() -> {
-                    // refId exists but can't find it — shouldn't happen, escalate
-                    log.error("Idempotency inconsistency: refId={} caused constraint violation but not found", refId);
-                    return ex;
-                });
-        }
+        log.debug("Transfer SUCCESS: refId={}", refId);
+        return toTransferResponse(senderTx, refId);
     }
-
-    // ── Transaction History ───────────────────────────────────────────────────
 
     @Transactional(readOnly = true)
     public List<TransactionHistoryResponse> getHistory(Long userId) {
@@ -134,8 +171,6 @@ public class TransferService {
             .map(this::toHistoryResponse)
             .toList();
     }
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
 
     private String resolveReferenceId(TransferRequest request) {
         return (request.getIdempotencyKey() != null && !request.getIdempotencyKey().isBlank())

@@ -5,6 +5,8 @@ import com.example.wallet_system.transfer.dto.TransactionHistoryResponse;
 import com.example.wallet_system.transfer.dto.TransferRequest;
 import com.example.wallet_system.transfer.dto.TransferResponse;
 import com.example.wallet_system.transfer.service.TransferService;
+import com.example.wallet_system.user.entity.User;
+
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -64,6 +66,6 @@ public class TransferController {
     }
 
     private Long extractUserId(UserDetails userDetails) {
-        return Long.parseLong(userDetails.getUsername());
+        return ((User) userDetails).getId();
     }
 }

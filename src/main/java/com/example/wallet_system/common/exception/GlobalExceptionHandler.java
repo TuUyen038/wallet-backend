@@ -2,6 +2,7 @@ package com.example.wallet_system.common.exception;
 
 import com.example.wallet_system.common.dto.ApiResponse;
 import com.example.wallet_system.common.exception.AppException.InsufficientBalanceException;
+import com.example.wallet_system.transfer.dto.TransferResponse;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -99,7 +100,15 @@ public class GlobalExceptionHandler {
         }
 
         @ExceptionHandler(AppException.DuplicateIdempotencyKeyException.class)
-        public ResponseEntity<ApiResponse<Void>> handleDuplicateKey(AppException.DuplicateIdempotencyKeyException ex) {
+        public ResponseEntity<ApiResponse<TransferResponse>> handleDuplicateIdempotency(
+                        AppException.DuplicateIdempotencyKeyException ex) {
+                // Trả về cached response với 200 — không phải error
+                return ResponseEntity.ok(ApiResponse.ok(ex.getCachedResponse()));
+        }
+
+        @ExceptionHandler(AppException.IdempotencyKeyInProgressException.class)
+        public ResponseEntity<ApiResponse<Void>> handleInProgress(
+                        AppException.IdempotencyKeyInProgressException ex) {
                 return ResponseEntity.status(HttpStatus.CONFLICT)
                                 .body(ApiResponse.error("CONFLICT", ex.getMessage()));
         }
