@@ -36,4 +36,5 @@ logging:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] [requestId=%X{requestId}] %-5level %logger{36} - %msg%n"
   level:
     root: INFO
-    com.example.wallet: DEBUG
+    org.springframework.web: DEBUG
+    com.example.wallet_system: DEBUG

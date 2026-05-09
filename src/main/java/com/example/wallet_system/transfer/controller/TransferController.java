@@ -38,6 +38,7 @@ public class TransferController {
         @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
         @Valid @RequestBody TransferRequest request
     ) {
+        log.debug(">>>>>>gọi den transfers");
         Long userId = extractUserId(userDetails);
         request.setIdempotencyKey(idempotencyKey);
 

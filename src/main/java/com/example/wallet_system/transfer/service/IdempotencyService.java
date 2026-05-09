@@ -10,12 +10,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+
+import java.time.Instant;
+
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -45,7 +46,7 @@ public class IdempotencyService {
   @Getter
   public static class ClaimOutcome {
     private final ClaimResult result;
-    private final TransferResponse cachedResponse; // chỉ có khi DUPLICATE
+    private final TransferResponse cachedResponse;
 
     public ClaimOutcome(ClaimResult result, TransferResponse cachedResponse) {
       this.result = result;
@@ -83,15 +84,18 @@ public class IdempotencyService {
         return ClaimOutcome.duplicate(deserialize(existing.getResponse()));
       }
 
-      // PROCESSING — có thể là crash giữa chừng lần trước
-      // Xóa key cũ, cho phép retry
-      idempotencyKeyRepository.deleteById(key);
-      idempotencyKeyRepository.flush();
+      // PROCESSING
+      if (existing.getUpdatedAt().isBefore(Instant.now().minusSeconds(300))) {
+        log.warn("Key {} bị treo, đang reset...", key);
 
-      // Insert lại
-      idempotencyKeyRepository.saveAndFlush(
-          IdempotencyKey.builder().key(key).status("PROCESSING").build());
-      return ClaimOutcome.claimed();
+        // Chỉ cần update status, Trigger ở Postgres sẽ tự nhảy updated_at lên NOW()
+        existing.setStatus("PROCESSING");
+        idempotencyKeyRepository.saveAndFlush(existing);
+
+        return ClaimOutcome.claimed();
+      }
+
+      return ClaimOutcome.inProgress();
     }
   }
 
