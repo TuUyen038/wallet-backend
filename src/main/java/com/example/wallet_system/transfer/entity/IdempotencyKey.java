@@ -26,8 +26,11 @@ public class IdempotencyKey {
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
-    private String response; // JSON snapshot của TransferResponse
+    private String response;
 
     @Column(name = "created_at", nullable = false, updatable = false, insertable = false)
     private Instant createdAt;
+
+    @Column(name = "updated_at", nullable = false, updatable = false, insertable = false)
+    private Instant updatedAt;
 }
